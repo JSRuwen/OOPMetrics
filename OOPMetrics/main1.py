@@ -28,9 +28,13 @@ class ParsingCode(jast.JNodeVisitor):
     def visit_Add(self, node: jast.Add):
         return super().visit_Add(node)
 
+    # PRINT DA ÁRVORE #########################################
     def visit_If(self, node):
         self.visit(node.body)
         self.ifs += 1
+
+    def visit_identifier(self, node):
+        print(node)
 
     def loc(self):
         self.countline = 0
@@ -73,10 +77,6 @@ class ParsingCode(jast.JNodeVisitor):
         self.rList = glob.glob("**/*.java", root_dir=pathDir, recursive=True)
         print(self.rList)
 
-
-## PRINT DA ÁRVORE #########################################
-#    def visit_identifier(self, node):
-#        print(node)
 
 visitor = ParsingCode()
 visitor.visit(tree)
