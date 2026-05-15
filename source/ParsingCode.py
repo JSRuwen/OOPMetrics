@@ -1,13 +1,18 @@
 import jast
+from pathlib import Path
 import os
 import glob
 
 pathDir = "java/simples"
-arquivo = "java/simples/helloworld.java"
-print("Path existente= " + str(os.path.exists(arquivo)))
+
+if pathDir[-1:] != "/": pathDir += "/"
+mainFile = "java/simples/helloworld2.java"
+name_file = mainFile[len(pathDir):-5]
+print(name_file)
+print("Path existente= " + str(os.path.exists(mainFile)))
 # print(os.listdir("."))
 # Parse the Java source file
-with open(arquivo) as file:
+with open(mainFile) as file:
     tree = jast.parse(file.read())
 
 
@@ -37,60 +42,72 @@ class ParsingCode(jast.JNodeVisitor):
     def visit_identifier(self, node: jast.identifier):
         print(node)
 
-    def loc(self):
-        self.countline = 0
-        with open(arquivo, "r") as f:
-            # linhas = f.readlines()
-            for line in f:
-                self.countline += 1
-        return self.countline
-
-    # exclui aquelas que possuem apenas delimitadores (p.ex. chaves, parênteses, aspas, begin, end )
-    def locEfficiency(self):
-        self.countline = 0
+    def line_of_code(self):
+        self.totalline = 0
+        self.count_eff_lines = 0
         blockComment = False
-        with open(arquivo, "r") as f:
-            lines = []
-            for line in f:  # strip() remove linhas em branco
-                lines.append(line.strip())
+
+        with open(mainFile, "r") as f:
+            lines = f.readlines()
+            self.totalline = len(lines)
+            
+            # exclui aquelas que possuem apenas delimitadores (p.ex. chaves, parênteses, aspas, begin, end )
             for line in lines:
+                stripped_lines = line.strip()# strip() remove linhas em branco
                 # print(line[:2])
-                if blockComment == True and not (line[-2:] == "*/"):
+                if blockComment == True and not (stripped_lines[-2:] == "*/"):
                     # print("Fechando o bloco")
                     continue
                 else:
                     blockComment = False
-
-                if line[:2] == "/*":
-                    # print("Encontrou um bloco")
+                if "/*" in stripped_lines or "*/" in stripped_lines:
+                    continue
+                if stripped_lines[:2] == "/*":
                     blockComment = True
                     continue
-                if line[:2] == "//":
-                    # print("Encontrou uma linha")
+                if stripped_lines[:2] == "//":
                     continue
-
-                line.rstrip("\n")  # ignora o '\n' na leitura
-                if line or line[-1:] == ";":
-                    self.countline += 1
-        return self.countline
+                if stripped_lines == "{" or stripped_lines == "}":
+                    continue
+                stripped_lines.rstrip("\n")  # ignora o '\n' na leitura
+                if stripped_lines or stripped_lines[-1:] == ";":
+                    self.count_eff_lines += 1
 
     def depth_of_inheritance(self):
-        self.rList = glob.glob("**/*.java", root_dir=pathDir, recursive=True)
-        self.countHerancy = 0
+        self.javafiles = Path(pathDir).glob("**/*.java")
+        self.depth = 0
         # print(self.rList)
-        for arc in self.rList:
-            #if arc["extends $1"]:
-                # self.countHerancy +=1
-            pass
+        # for file in self.javafiles:
+        #     with open(file) as f:
+        #         for line in f:
+        #             # Read only the first line
+        #             if "extends " + name_file in line:
+        #                 self.depth += 1
+        #                 break
+        #             break
+        #
 
-        return len(self.rList)
+        return self.depth
 
     def number_of_child(self):
+        self.javafiles = Path(pathDir).glob("**/*.java")
+        self.countChilds = 0
+        # print(self.rList)
+        for file in self.javafiles:
+            with open(file) as f:
+                for line in f:
+                    # Read only the first line
+                    if "extends " + name_file in line:
+                        self.countChilds += 1
+                        break
+                    break
+
+        return self.countChilds
         pass
 
-
-visitor = ParsingCode()
-visitor.visit(tree)
-print("LOC: " + str(visitor.loc()))
-print("LOC Eficiente: " + str(visitor.locEfficiency()))
-print("Depth of Inheritance: " + str(visitor.depth_of_inheritance()))
+def call_main():
+    visitor = ParsingCode()
+    visitor.visit(tree)
+    print("LOC: " + str(visitor.line_of_code()))
+    print("Depth of Inheritance: " + str(visitor.depth_of_inheritance()))
+    print(str(visitor.number_of_child()))
