@@ -1,0 +1,7 @@
+.git/
+venv/
+java/
+nan.py
+OOPMetrics/
+
+*__pycache__/
