@@ -1,7 +1,7 @@
 from source.ParsingCode import ParsingCode
 
-path_to_file: str = "./java/simples/helloworld/helloworld.java"
-path_to_dir: str = "./java/simples/helloworld/"
+path_to_file: str = ""
+path_to_dir: str = ""
 
 
 def args_input():
