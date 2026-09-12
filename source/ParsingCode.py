@@ -92,32 +92,34 @@ class ParsingCode(jast.JNodeVisitor):
 
         self.count_total_lines = 0
         self.count_eff_lines = 0
-        blockComment = False
 
         with open(self.mainFile, "r") as f:
             lines = f.readlines()
             self.count_total_lines = len(lines)
 
-            # exclui aquelas que possuem apenas delimitadores (p.ex. chaves, parênteses, aspas, begin, end )
+            blockComment = False
+
             for line in lines:
-                stripped_lines = line.strip()  # strip() remove linhas em branco
-                # print(line[:2])
-                if blockComment == True and stripped_lines[-2:] != "*/":
-                    # print("Fechando o bloco")
-                    continue
-                else:
-                    blockComment = False
-                if "/*" in stripped_lines or "*/" in stripped_lines:
-                    continue
+                stripped_lines = line.strip()
+
                 if stripped_lines[:2] == "/*":
                     blockComment = True
                     continue
+
+                if stripped_lines[-2:] == "*/":
+                    blockComment = False
+                    continue
+
                 if stripped_lines[:2] == "//":
                     continue
+
                 if stripped_lines == "{" or stripped_lines == "}":
                     continue
-                stripped_lines.rstrip("\n")  # ignora o '\n' na leitura
-                if stripped_lines or stripped_lines[-1:] == ";":
+
+                stripped_lines.rstrip("\n")
+
+                if (stripped_lines or stripped_lines[-1:] == ";") and blockComment is False:
+                    print(line)
                     self.count_eff_lines += 1
 
     def depth_of_inheritance(self):
