@@ -119,7 +119,6 @@ class ParsingCode(jast.JNodeVisitor):
                 stripped_lines.rstrip("\n")
 
                 if (stripped_lines or stripped_lines[-1:] == ";") and blockComment is False:
-                    print(line)
                     self.count_eff_lines += 1
 
     def depth_of_inheritance(self):
