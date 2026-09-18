@@ -2,6 +2,8 @@ from pathlib import Path
 
 import jast
 
+from source.AuxJAST import AuxParse
+
 
 class ParsingCode(jast.JNodeVisitor):
     def __init__(self, file_path: str, file_dir) -> None:
@@ -10,13 +12,13 @@ class ParsingCode(jast.JNodeVisitor):
         self.pathDir = file_dir
         self.name_file: str = self.mainFile[len(self.pathDir) : -5]
 
-        self.countADD = 0
-        self.fors = 0
-        self.ifs = 0
-
         """ Variables for Lines of Code (LOC) """
         self.count_total_lines = 0
         self.count_eff_lines = 0
+
+        """ Coupling Between Objets """
+        self.cbo = 0
+        self.interacts_of_coupling = []
 
         """ Variables for Depth of Inheritance and Number of Child """
         self.javafiles = Path(self.pathDir).glob("**/*.java")
@@ -24,14 +26,23 @@ class ParsingCode(jast.JNodeVisitor):
         self.names_of_children = []
         self.countChilds = 0
 
-        """ CBO """
+        """ Response for a Class"""
+        self.response_for_class_metric = 0
+
+        """ JAVA """
         self.java_classes = []
-        self.cbo = 0
-        self.cbo_peach_method = []
+        self.extends = ""
+        self.implements = []
+        self.fields = []
         self.methods = []
+        self.call_methd = []
+        self.objets = []
+        self.name_expr = []
+        self.types = []
+
+        self.java_objects = []
 
         """ Calling the 'main' of the parser"""
-        self.extract_java_classes()
         self.run_parser()
 
     #
@@ -57,21 +68,26 @@ class ParsingCode(jast.JNodeVisitor):
 
     def calculate_metrics(self):
         """Calculates all the quality metrics for the code"""
+        self.extract_java_classes()
 
         self.line_of_code()
         self.depth_of_inheritance()
         self.number_of_child(self.name_file, self.pathDir, self.java_classes)
+        self.response_for_class()
+        self.coupling_btwn_objects()
         self.print_metrics()
 
     def print_metrics(self):
         print(f"LOC: {self.count_total_lines}")
         print(f"LOC Efficiency: {self.count_eff_lines}")
         print(f"Number of Child: {self.countChilds}")
-        print(f"CBO: {self.cbo_peach_method}")
-        print(f"{self.methods}")
+        print(f"CBO: {self.cbo}")
+        print(f"RFC {self.response_for_class()}")
 
     def extract_java_classes(self):
         for file in self.javafiles:
+            if file.name == f"{self.name_file}.java":
+                continue
             path = self.pathDir
             text = str(file)
 
@@ -87,6 +103,11 @@ class ParsingCode(jast.JNodeVisitor):
                 javaclassname = text[start_idx:end_idx]
                 self.java_classes.append({"class": javaclassname, "path": path})
 
+        for item in self.java_classes:
+            path = f'{item["path"]}{item["class"]}.java'
+            aux = AuxParse(path)
+            self.java_objects.append(aux)
+
     def line_of_code(self):
         """Return the number of lines, total and effective lines"""
 
@@ -101,12 +122,11 @@ class ParsingCode(jast.JNodeVisitor):
 
             for line in lines:
                 stripped_lines = line.strip()
-
                 if stripped_lines[:2] == "/*":
                     blockComment = True
                     continue
 
-                if stripped_lines[-2:] == "*/":
+                if stripped_lines[-2:] == "/*":
                     blockComment = False
                     continue
 
@@ -118,7 +138,9 @@ class ParsingCode(jast.JNodeVisitor):
 
                 stripped_lines.rstrip("\n")
 
-                if (stripped_lines or stripped_lines[-1:] == ";") and blockComment is False:
+                if (
+                    stripped_lines or stripped_lines[-1:] == ";"
+                ) and blockComment is False:
                     self.count_eff_lines += 1
 
     def depth_of_inheritance(self):
@@ -126,142 +148,226 @@ class ParsingCode(jast.JNodeVisitor):
 
     def number_of_child(self, actual_name: str, actual_dir: str, javadict):
         javafiles = javadict
-        for item in self.java_classes:
-            for sub in self.java_classes:
-                path = f'{sub["path"]}{sub["class"]}.java'
-                with open(path) as f:
-                    lines = f.readlines()
-                    for line in lines:
-                        if "extends " + item["class"] in line:
-                            self.countChilds += 1
-                            javafiles.remove(item)
-                            self.number_of_child(sub["class"], sub["path"], javafiles)
-                            break
+
+        for sub in javafiles:
+            path = f'{sub["path"]}{sub["class"]}.java'
+
+            with open(path) as f:
+                lines = f.readlines()
+
+                for line in lines:
+                    if "extends " + actual_name in line:
+                        self.countChilds += 1
+                        javafiles.remove(sub)
+                        self.number_of_child(sub["class"], sub["path"], javafiles)
+                        break
+
         return self.countChilds
 
-    def method_scan(self, node):
-        print(f"method. {node.__dict__}")
-        print(f"  params. {node.parameters.__dict__}")
-        print(f"  body. {node.body.__dict__}")
+    def coupling_btwn_objects(self):
+        for jclass in self.java_objects:
 
-        param = []
-        for item in node.parameters.__dict__["parameters"]:
-            param.append(
-                {
-                    "type": self.generic_visit(item.type),
-                    "id": self.generic_visit(item.id),
-                }
-            )
-        print(f"param_format: {param}")
+            for item in self.types:
 
-        body = []
-        print(f'    body dict: {node.body.__dict__["body"]}')
-        for item in node.body.__dict__["body"]:
-            match item.__class__.__name__:
-                case "LocalVariable":
-                    body_aux = {
-                        f"{item.__class__.__name__}": f"line {item.lineno}",
-                        "type": item.type.__class__.__name__,
-                        "decl": [],
-                    }
-                    if body_aux["type"] == "Coit":
-                        body_aux["type"] = self.generic_visit(item.type)
+                if jclass.name_class in item["type"]:
+                    self.cbo += 1
+                    self.interacts_of_coupling.append(item)
 
-                    for i in item.declarators:
-                        body_aux["decl"].append(
-                            {
-                                "id": self.generic_visit(i.id),
-                                "init": self.generic_visit(i.init),
-                            }
-                        )
-                    body.append(body_aux)
-                case "Expr":
-                    body_aux = {
-                        f"{item.__class__.__name__}": f"line {item.lineno}",
-                        "args": [],
-                    }
-                    if "Member" in item.__dict__["value"].__class__.__name__:
-                        body_aux["member"] = self.generic_visit(item.value.member)
-
-                    if "Call" in item.__dict__["value"].__class__.__name__:
-                        body_aux["func"] = self.generic_visit(item.value.func)
-                    body.append(body_aux)
-        method = {
-            "id": node.__dict__["id"],
-            "parameters": param,
-            "body": body,
-            "return": node.return_type.__class__.__name__,
-        }
-        self.methods.append(method)
-
-    def cbo_metric():
+    def lack_of_cohesion_of_methods(self, node):
         pass
 
-    def lcom_aux(self, node):
-        pass
-
-    def response_for_class_metric(self):
+    def response_for_class(self):
         """RS = {M} + {Ri}
-        M: set of all methods in the class
-        Ri: set of methods called by the class
+        - M: set of all methods in the class
+        - Ri: set of methods called by the class
         """
+
         rfc_sum = len(self.methods)
-        return rfc_sum
+        intersection = []
+
+        for jclass in self.java_objects:
+            for method in jclass.methods:
+                for ext_method in self.call_methd:
+                    if ext_method["func"] in method.id:
+                        if {jclass.name_class, method.id} not in intersection:
+                            intersection.append({jclass.name_class, method.id})
+                            rfc_sum += 1
+
+        self.response_for_class_metric = rfc_sum
+        return self.response_for_class_metric
+
+    def weight_methods_class(self):
+        """Every method counts at 1"""
+        return len(self.methods)
 
     #
     #   #   jAST AUX METHODS
     #
-    def visit_identifier(self, node: jast.identifier):
-        # print(f"visit id: {node}")
-        return node
+
+    #
+    # ##    DECLARATIONS
+    #
+
+    def visit_Class(self, node: jast.Class):
+        if isinstance(node.extends, jast.Class):
+            self.extends = self.generic_visit(node.extends)
+        for item in node.implements:
+            self.visit(item)
+        for item in node.body:
+            self.visit(item)
 
     def visit_Method(self, node: jast.Method):
-        self.method_scan(node)
+        self.methods.append(node)
+        self.visit(node.body)
+        self.visit(node.parameters)
+        self.visit(node.return_type)
+
+    def visit_Field(self, node: jast.Field):
+        self.fields.append(node)
+        for item in node.modifiers:
+            self.visit(item)
+        self.visit(node.type)
+        for item in node.declarators:
+            self.visit(item)
+
+    def visit_identifier(self, node: jast.identifier):
+        return node
 
     def visit_params(self, node: jast.params):
-        print(f"   params: {node.__dict__}")
-        for i in range(0, len(node.__dict__["parameters"]), 1):
-            self.visit(node.__dict__["parameters"][i])
+        for i in node.parameters:
+            self.visit(i)
 
     def visit_param(self, node: jast.param):
-        print(f"    param: {node.__dict__}")
         self.visit(node.type)
         self.visit(node.id)
         return node
 
     def visit_Coit(self, node: jast.Coit):
-        print(f"coit: {node.__dict__}")
-        return node
-
-    def visit_Expr(self, node: jast.Expr):
-        print(f"     Expr: {node.__dict__}")
-        self.visit(node.value)
-
-    def visit_Call(self, node: jast.Call):
-        print(f"call: {node.__dict__}")
-        print(node.__dict__["func"].__dict__)
-
-    def visit_Constant(self, node: jast.Constant):
-        print(node.value)
+        """Coit is a 'type' element, we can analyse every 'strange type' that the jAST declare as Coit object on a last node, this used to include all the types of ou Classes declarations."""
+        if "lineno" in node.__dict__.keys():
+            self.types.append({"type": node.id, "line": node.lineno})
+        else:
+            self.types.append({"type": node.id})
+        if node.type_args != None:
+            self.visit(node.type_args)
 
     def visit_InstanceOf(self, node: jast.InstanceOf):
-        print(f" Inst Of: {node.__dict__}")
-
-    def visit_variabledeclaratorid(self, node: jast.variabledeclaratorid):
-        print(f"vardecid: {node.__dict__}")
-        return node.id
+        pass
 
     def visit_dim(self, node: jast.dim):
-        print(f"dim: {node.__dict__}")
+        pass
+
+    #
+    # ## Statements
+    #
 
     def visit_LocalVariable(self, node: jast.LocalVariable):
-        print(f"    var local: {node.__dict__}")
+        self.visit(node.type)
+        for item in node.declarators:
+            self.visit(item)
+        return node
+
+    def visit_Assign(self, node: jast.Assign):
+        self.visit(node.target)
+        self.visit(node.value)
+
+    def visit_This(self, node: jast.This):
+        return node
+
+    def visit_LocalType(self, node: jast.LocalType):
+        return node
+
+    def visit_If(self, node: jast.If):
+        self.visit(node.test)
+        self.visit(node.body)
+        if node.orelse != None:
+            self.visit(node.orelse)
+
+    def visit_Switch(self, node: jast.Switch):
+        self.visit(node.value)
+        self.visit(node.body)
+
+    def visit_switchblock(self, node: jast.switchblock):
+        for item in node.groups:
+            self.visit(item)
+        for item in node.labels:
+            self.visit(item)
+
+    def visit_switchgroup(self, node: jast.switchgroup):
+        for item in node.labels:
+            self.visit(item)
+        for item in node.body:
+            self.visit(item)
+
+    def visit_Case(self, node: jast.Case):
+        self.visit(node.guard)
+
+    def visit_Expr(self, node: jast.Expr):
+        self.visit(node.value)
+
+    def visit_While(self, node: jast.While):
+        self.visit(node.body)
+
+    #
+    # ## EXPRESSIONS
+    #
+
+    def visit_Call(self, node: jast.Call):
+        self.visit(node.func)
+        for param in node.args:
+            self.visit(param)
+        self.call_methd.append({"line": node.lineno, "func": node.func.id})
 
     def visit_declarator(self, node: jast.declarator):
-        return node
+        self.visit(node.id)
+        if node.init != None:
+            self.visit(node.init)
+
+    def visit_variabledeclaratorid(self, node: jast.variabledeclaratorid):
+        return node.id
+
+    def visit_NewObject(self, node: jast.NewObject):
+        """Extract the new Object from their line"""
+
+        self.visit(node.type)
+        self.objets.append({node.lineno, node.type.id})
+        for item in node.args:
+            self.visit(item)
+        if node.body != None:
+            for item in node.body:
+                self.visit(item)
 
     def visit_Name(self, node: jast.Name):
-        return node
+        """Here, we can extract the path of many expressions, and store her position to make a clean parse for the metrics
+
+        Example:
+            Client.getStatus()
+            * 'Client' and 'getStatus' is a Name object
+        """
+        self.name_expr.append({"id": node.id, "line": {node.lineno}})
+
+    def visit_BinOp(self, node: jast.BinOp):
+        self.visit(node.left)
+        self.visit(node.right)
+
+    def visit_ArrayType(self, node: jast.ArrayType):
+        self.visit(node.type)
+        for item in node.dims:
+            self.visit(item)
+
+    def visit_arrayinit(self, node: jast.arrayinit):
+        for item in node.values:
+            self.visit(item)
+
+    def visit_typeargs(self, node: jast.typeargs):
+        for item in node.types:
+            self.visit(item)
+
+    def visit_Constant(self, node: jast.Constant):
+        self.visit(node.value)
 
     def visit_Member(self, node: jast.Member):
+        """jAST, most of the time, classifies functions call with 'member', so we can extract the methods called for RFC, CBO and WMC"""
+        self.visit(node.value)
+        self.visit(node.member)
         return node
