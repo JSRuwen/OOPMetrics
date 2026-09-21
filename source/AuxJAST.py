@@ -6,13 +6,13 @@ class AuxParse(jast.JNodeVisitor):
         self.file = path_to_file
 
         """ JAVA """
-        self.name_class = ''
+        self.filename = ''
         self.java_classes = []
-        self.class_dict = {"methods": [], "field": []}
-        self.extends = ""
+        self.extends = None
         self.implements = []
         self.body = []
-        self.methods = []
+        self.methods = set()
+        self.fields = set()
         self.call_methd = set()
         self.objets = []
         self.expressions = []
@@ -30,20 +30,27 @@ class AuxParse(jast.JNodeVisitor):
 
             self.visit(tree)
         except Exception as e:
-            print(f"{self.file} AUX: Houve um erro ao abrir o arquivo:\n{e}")
+            print(f"Houve um erro ao abrir o arquivo Secundário: {self.file}\n\n{e}")
 
     def visit_Class(self, node: jast.Class):
-        self.name_class = node.id
+        self.filename = node.id
         if isinstance(node.extends, jast.Class):
             self.extends = self.generic_visit(node.extends)
         for item in node.implements:
             self.visit(item)
         for item in node.body:
-            match item.__class__.__name__:
-                case "Method":
-                    self.class_dict["methods"].append(item)
-                    self.methods.append(item)
-                case "Field":
-                    self.class_dict["field"].append(self.generic_visit(item))
-
             self.visit(item)
+
+    def visit_Method(self, node: jast.Method):
+        self.methods.add(node.id)
+        self.visit(node.body)
+        self.visit(node.parameters)
+        self.visit(node.return_type)
+
+    def visit_Field(self, node: jast.Field):
+        for item in node.modifiers:
+            self.visit(item)
+        self.visit(node.type)
+        for item in node.declarators:
+            self.visit(item)
+            self.fields.add(item.id.id)
