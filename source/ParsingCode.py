@@ -1,6 +1,11 @@
 from pathlib import Path
 
 import jast
+from rich import box
+from rich.columns import Columns
+from rich.console import Console
+from rich.style import Style
+from rich.table import Table
 
 from source.AuxJAST import AuxParse
 
@@ -10,7 +15,7 @@ class ParsingCode(jast.JNodeVisitor):
         """Configs for File and Directory"""
         self.mainFile: str = file_path
         self.pathDir = file_dir
-        self.name_file: str = self.mainFile[len(self.pathDir) : -5]
+        self.filename: str = self.mainFile[len(self.pathDir) : -5]
 
         """ Variables for Lines of Code (LOC) """
         self.count_total_lines = 0
@@ -21,26 +26,34 @@ class ParsingCode(jast.JNodeVisitor):
         self.interacts_of_coupling = []
 
         """ Variables for Depth of Inheritance and Number of Child """
-        self.javafiles = Path(self.pathDir).glob("**/*.java")
+        self.javafiles = list(Path(self.pathDir).glob("**/*.java"))
         self.depth = 0
         self.names_of_children = []
-        self.countChilds = 0
+        self.number_of_child_metric = 0
 
         """ Response for a Class"""
         self.response_for_class_metric = 0
 
+        """ Lack Cohesion Of Methods """
+        self.lCOM_metric = 0
+
         """ JAVA """
         self.java_classes = []
-        self.extends = ""
+        self.extends = None
         self.implements = []
-        self.fields = []
-        self.methods = []
+        self.constructor = None
+        self.fields : set = set()
+        self.this : set = set()
+        self.assigns : set = set()
+        self.methods : set = set()
+        self.methods_objects = []
         self.call_methd = []
         self.objets = []
         self.name_expr = []
         self.types = []
 
         self.java_objects = []
+        self.objects_used = []
 
         """ Calling the 'main' of the parser"""
         self.run_parser()
@@ -60,7 +73,10 @@ class ParsingCode(jast.JNodeVisitor):
             self.visit(tree)
             self.calculate_metrics()
         except Exception as e:
-            print(f"{self.mainFile} Houve um erro ao abrir o arquivo:\n{e}")
+            print(
+                "Houve um erro ao abrir o arquivo Principal:"
+                + f"\n  {self.mainFile}\n\n{e}"
+            )
 
     #
     #   #   METRICS METHODS
@@ -71,23 +87,90 @@ class ParsingCode(jast.JNodeVisitor):
         self.extract_java_classes()
 
         self.line_of_code()
-        self.depth_of_inheritance()
-        self.number_of_child(self.name_file, self.pathDir, self.java_classes)
-        self.response_for_class()
+        self.number_of_child(self.filename, self.pathDir, self.java_classes)
+        self.depth_of_inheritance(self.extends, self.javafiles)
         self.coupling_btwn_objects()
+        self.response_for_class()
+        self.lack_of_cohesion_of_methods()
         self.print_metrics()
 
     def print_metrics(self):
-        print(f"LOC: {self.count_total_lines}")
-        print(f"LOC Efficiency: {self.count_eff_lines}")
-        print(f"Number of Child: {self.countChilds}")
-        print(f"CBO: {self.cbo}")
-        print(f"RFC {self.response_for_class()}")
+        console = Console()
+    
+        # Create table
+        title: str = f"[bold][#00ffae]{self.filename.upper()}[/]"
+        border_style: Style = Style(color="#000000", bold=True,)
+
+        table = Table(title=title,
+                      box=box.ROUNDED,
+                      show_header=True,
+                      header_style="bold #ffee00",
+                      border_style=border_style,
+                      )
+
+
+        table.add_column("Complexity", style="cyan")
+        table.add_column("Value", justify="right", style="#1cffa0")
+        
+        table.add_row("Total lines", str(self.count_total_lines))
+        table.add_row("Effective lines", str(self.count_eff_lines))
+        
+        # table.add_row("─" * 20, "─" * 10, style="dim")
+        
+        # table.add_row("Distinct Operators (n1)", str(self.n1))
+        # table.add_row("Distinct Operands (n2)", str(self.n2))
+        # table.add_row("Total Operators (N1)", str(self.N1))
+        # table.add_row("Total Operands (N2)", str(self.N2))
+        # table.add_row("Program vocabulary", str(self.vocabulary))
+        # table.add_row("Program Length", str(self.length))
+        # table.add_row("Estimated Length", f"{self.estimated_len:.1f}")
+        # table.add_row("Volume", f"{self.volume:.1f}")
+        # table.add_row("Difficulty", f"{self.difficulty:.1f}")
+        # table.add_row("Program estimated level", f"{self.estimated_level:.4f}")
+        # table.add_row("Content Intelligence", f"{self.intelligence:.1f}")
+        # table.add_row("Effort", f"{self.effort:.1f}")
+        # table.add_row("Required time to program", f"{self.time_required:.1f}")
+        # table.add_row("Delivered bugs", f"{self.delivered_bugs:.1f}")
+        
+        # Adicionar separador para a complexidade ciclomática
+        table.add_row("─" * 20, "─" * 10, style="dim")
+        table.add_row("[bold]C&K: Chidamber and Kemerer[/]", "")
+        table.add_row("Number of Child", str(self.number_of_child_metric))
+        table.add_row("Depth of Inheritance", str(self.depth))
+        table.add_row("Coupling Between Objects", str(self.cbo))
+        table.add_row("Response for Class", str(self.response_for_class_metric))
+        table.add_row("Lack Cohesion of Methods", f"{self.lCOM_metric:.2f}")
+        table.add_row("Weight Method Class", f"{self.weight_methods_class()}")
+
+
+
+
+        table.add_row("─" * 20, "─" * 10, style="dim")
+        # table.add_row("[bold]OTHERS[/]", "")
+        # table.add_row("Average line volume", str(round(self.avg_line_volume)))
+        #
+        # table.add_row("Number of functions calls", str(self.total_func_calls))
+
+        # Imprimir a tabela
+        console.print(table)
 
     def extract_java_classes(self):
+        if self.extends != None:
+            for file in self.javafiles:
+                if f'{self.extends}.java' == file.name:
+                    parent = AuxParse(str(file))
+
+                    fields = {x.strip() for x in self.fields} | {x.strip() for x in parent.fields}
+                    self.fields = fields
+                    
+                    methods = {x.strip() for x in self.methods} | {x.strip() for x in parent.methods}
+                    self.methods = methods
+                    break
+
         for file in self.javafiles:
-            if file.name == f"{self.name_file}.java":
+            if file.name == f"{self.filename}.java":
                 continue
+
             path = self.pathDir
             text = str(file)
 
@@ -126,7 +209,7 @@ class ParsingCode(jast.JNodeVisitor):
                     blockComment = True
                     continue
 
-                if stripped_lines[-2:] == "/*":
+                if stripped_lines[-2:] == "*/":
                     blockComment = False
                     continue
 
@@ -136,6 +219,7 @@ class ParsingCode(jast.JNodeVisitor):
                 if stripped_lines == "{" or stripped_lines == "}":
                     continue
 
+                stripped_lines.rstrip("%n")
                 stripped_lines.rstrip("\n")
 
                 if (
@@ -143,7 +227,14 @@ class ParsingCode(jast.JNodeVisitor):
                 ) and blockComment is False:
                     self.count_eff_lines += 1
 
-    def depth_of_inheritance(self):
+    def depth_of_inheritance(self, jclass, jfiles : list):
+        if jclass != None:
+            for file in jfiles:
+                if jclass == file.name[:-5]:
+                    aux = AuxParse(file)
+                    self.depth_of_inheritance(aux.extends, jfiles)
+                    self.depth += 1
+            
         return self.depth
 
     def number_of_child(self, actual_name: str, actual_dir: str, javadict):
@@ -157,24 +248,63 @@ class ParsingCode(jast.JNodeVisitor):
 
                 for line in lines:
                     if "extends " + actual_name in line:
-                        self.countChilds += 1
-                        javafiles.remove(sub)
-                        self.number_of_child(sub["class"], sub["path"], javafiles)
+                        self.number_of_child_metric += 1
                         break
 
-        return self.countChilds
+        return self.number_of_child_metric
 
     def coupling_btwn_objects(self):
+        self.cbo = 0
+        types_set = set()
         for jclass in self.java_objects:
 
             for item in self.types:
+                if jclass.filename in item["type"]:
+                    if item["type"].strip() not in {x.strip() for x in types_set}:
+                        self.cbo += 1
+                        types_set.add(item["type"])
+                    self.objects_used.append(jclass)
 
-                if jclass.name_class in item["type"]:
-                    self.cbo += 1
-                    self.interacts_of_coupling.append(item)
 
-    def lack_of_cohesion_of_methods(self, node):
-        pass
+    def lack_of_cohesion_of_methods(self):
+        count = 0
+
+        if self.fields == set():
+            return
+        
+        if self.constructor != None:
+            cons_fields = [x for x in self.name_expr if self.constructor.lineno < x["line"] < self.constructor.end_lineno]
+
+            for field in self.fields:
+
+                for item in cons_fields:
+                    # print(f'{field} in {item}')
+                    ext = {field.strip()} & {item["id"].strip()}
+                    if ext != set():
+                        count += 1
+                        break
+
+        for field in self.fields:
+            
+            for method in self.methods_objects:
+
+                fields = [x for x in self.name_expr if method.lineno <x["line"] < method.end_lineno]
+                for item in fields:
+                    ext = {field.strip()} & {item["id"].strip()}
+                    if ext != set():
+                        count += 1
+                        break
+
+        calc = None
+        
+        try:
+            # print(f'1 - {count} / {len(self.methods)} * {len(self.fields)}')
+            calc = 1 - (count / (len(self.methods) * len(self.fields)))
+        except ZeroDivisionError as e:
+            pass
+        finally:
+            self.lCOM_metric = calc
+
 
     def response_for_class(self):
         """RS = {M} + {Ri}
@@ -185,16 +315,19 @@ class ParsingCode(jast.JNodeVisitor):
         rfc_sum = len(self.methods)
         intersection = []
 
-        for jclass in self.java_objects:
+        for jclass in self.objects_used:
             for method in jclass.methods:
                 for ext_method in self.call_methd:
-                    if ext_method["func"] in method.id:
-                        if {jclass.name_class, method.id} not in intersection:
-                            intersection.append({jclass.name_class, method.id})
+                    if ext_method["func"] in method:
+                        result = {jclass.filename, method} 
+                        if result not in intersection:
+                            intersection.append({jclass.filename, method})
                             rfc_sum += 1
+                            break
 
-        self.response_for_class_metric = rfc_sum
+        self.response_for_class_metric = rfc_sum + 1
         return self.response_for_class_metric
+
 
     def weight_methods_class(self):
         """Every method counts at 1"""
@@ -209,7 +342,7 @@ class ParsingCode(jast.JNodeVisitor):
     #
 
     def visit_Class(self, node: jast.Class):
-        if isinstance(node.extends, jast.Class):
+        if isinstance(node.extends, jast.jtype):
             self.extends = self.generic_visit(node.extends)
         for item in node.implements:
             self.visit(item)
@@ -217,18 +350,35 @@ class ParsingCode(jast.JNodeVisitor):
             self.visit(item)
 
     def visit_Method(self, node: jast.Method):
-        self.methods.append(node)
+        self.methods.add(node.id)
+        self.methods_objects.append(node)
         self.visit(node.body)
         self.visit(node.parameters)
         self.visit(node.return_type)
 
+    def visit_Block(self, node: jast.Block):
+        for item in node.body:
+            self.visit(item)
+
+    def visit_Constructor(self, node: jast.Constructor):
+        for item in node.modifiers:
+            self.visit(item)
+        self.constructor = node
+        self.visit(node.id)
+        self.visit(node.parameters)
+        self.visit(node.body)
+
     def visit_Field(self, node: jast.Field):
-        self.fields.append(node)
         for item in node.modifiers:
             self.visit(item)
         self.visit(node.type)
         for item in node.declarators:
             self.visit(item)
+            self.fields.add(item.id.id)
+
+    def visit_Return(self, node: jast.Return):
+        if node.value != None:
+            self.visit(node.value)
 
     def visit_identifier(self, node: jast.identifier):
         return node
@@ -268,10 +418,12 @@ class ParsingCode(jast.JNodeVisitor):
         return node
 
     def visit_Assign(self, node: jast.Assign):
+        self.assigns.add(node.target)
         self.visit(node.target)
         self.visit(node.value)
 
     def visit_This(self, node: jast.This):
+        self.this.add(node.lineno)
         return node
 
     def visit_LocalType(self, node: jast.LocalType):
@@ -302,8 +454,16 @@ class ParsingCode(jast.JNodeVisitor):
     def visit_Case(self, node: jast.Case):
         self.visit(node.guard)
 
+    def visit_Try(self, node: jast.Try):
+        self.visit(node.body)
+        for item in node.catches:
+            self.visit(item)
+        if node.final != None:
+            self.visit(node.final)
+
     def visit_Expr(self, node: jast.Expr):
         self.visit(node.value)
+    
 
     def visit_While(self, node: jast.While):
         self.visit(node.body)
@@ -344,7 +504,7 @@ class ParsingCode(jast.JNodeVisitor):
             Client.getStatus()
             * 'Client' and 'getStatus' is a Name object
         """
-        self.name_expr.append({"id": node.id, "line": {node.lineno}})
+        self.name_expr.append({"id": node.id, "line": node.lineno})
 
     def visit_BinOp(self, node: jast.BinOp):
         self.visit(node.left)
