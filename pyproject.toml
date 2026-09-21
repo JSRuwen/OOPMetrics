@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "OOPMetrics"
+version = "0.0.1"
+description = "A Python tool for analyzing Java code Object Oriented using Chidamber & Kemerer metrics."
+readme = "README.md"
+authors = [
+	{ name = "Rhuan Santos Wolfgramm", email = "rhuansw2005@outlook.com" },
+    { name = "Arthur Morgado Teixeira", email = "arthurmorgado7751@gmail.com" }
+]
+keywords = ["OOP", "C&K", "metrics", "java-code", "java-ast", "rich"]
+requires-python = ">=3.10"
+
+dependencies = [
+    "java-ast>=1.0.3",
+    "rich>=13.0.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/JSRuwen/OOPMetrics"
+Issues = "https://github.com/JSRuwen/OOPMetrics/issues"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "black",
+    "flake8"
+]
+
+[project.scripts]
+OOPMetrics = "OOPMetrics.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["source"]
+
+[tool.black]
+line-length = 88
+target-version = ['py310']
